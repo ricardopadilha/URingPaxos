@@ -93,6 +93,11 @@
         		<version>3.2</version>
     	</dependency>
 		<dependency>
+			<groupId>net.dsys.snio</groupId>
+			<artifactId>snio</artifactId>
+			<version>master</version>
+		</dependency>
+		<dependency>
   			<groupId>junit</groupId>
   			<artifactId>junit</artifactId>
   			<version>4.11</version>

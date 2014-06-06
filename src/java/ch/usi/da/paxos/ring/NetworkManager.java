@@ -20,13 +20,25 @@ package ch.usi.da.paxos.ring;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.StandardSocketOptions;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
-import java.nio.channels.ServerSocketChannel;
-import java.nio.channels.SocketChannel;
-import java.util.concurrent.LinkedTransferQueue;
-import java.util.concurrent.TransferQueue;
+import java.nio.ByteBuffer;
+import java.util.concurrent.ExecutionException;
+
+import net.dsys.commons.api.lang.Factory;
+import net.dsys.commons.impl.lang.ByteBufferFactory;
+import net.dsys.snio.api.buffer.MessageBufferConsumer;
+import net.dsys.snio.api.buffer.MessageBufferProducer;
+import net.dsys.snio.api.channel.MessageChannel;
+import net.dsys.snio.api.channel.MessageServerChannel;
+import net.dsys.snio.api.codec.MessageCodec;
+import net.dsys.snio.api.handler.MessageConsumer;
+import net.dsys.snio.api.handler.MessageHandler;
+import net.dsys.snio.api.pool.SelectorPool;
+import net.dsys.snio.impl.buffer.RingBufferProvider;
+import net.dsys.snio.impl.channel.MessageChannels;
+import net.dsys.snio.impl.channel.MessageServerChannels;
+import net.dsys.snio.impl.codec.Codecs;
+import net.dsys.snio.impl.handler.MessageHandlers;
+import net.dsys.snio.impl.pool.SelectorPools;
 
 import org.apache.log4j.Logger;
 
@@ -52,14 +64,14 @@ public class NetworkManager {
 	private final static Logger stats = Logger.getLogger("ch.usi.da.paxos.Stats");
 
 	private final RingManager ring;
+
+	private SelectorPool pool;
+
+	private MessageServerChannel<ByteBuffer> server;
 	
-	private ServerSocketChannel server;
+	private MessageChannel<ByteBuffer> client;
 	
-	private Selector selector;
-	
-	private SocketChannel client;
-	
-	private final TransferQueue<Message> send_queue = new LinkedTransferQueue<Message>();
+	private MessageBufferProducer<ByteBuffer> send_queue;
 	
 	private Role acceptor = null;
 
@@ -69,8 +81,6 @@ public class NetworkManager {
 
 	private Role proposer = null;
 
-	private boolean tcp_nodelay = false;
-	
 	public boolean crc_32 = false;
 	
 	public int buf_size = 131071;
@@ -95,6 +105,9 @@ public class NetworkManager {
 	 */
 	public NetworkManager(RingManager ring) throws IOException {
 		this.ring = ring;
+		// use as many threads as possible
+		this.pool = SelectorPools.open("NetworkManager-pool");
+
 		if(stats.isDebugEnabled()){
 			for(MessageType t : MessageType.values()){
 				messages_distribution[t.getId()] = 0;
@@ -109,33 +122,57 @@ public class NetworkManager {
 	 * @throws IOException
 	 */
 	public void startServer() throws IOException {
-		if(ring.getConfiguration().containsKey(ConfigKey.tcp_nodelay)){
-			if(Integer.parseInt(ring.getConfiguration().get(ConfigKey.tcp_nodelay)) == 1){
-				tcp_nodelay = true;
+
+		// see the maximum Adler32 checksum message length -- should be a config option
+		final int messageLength = 65521;
+		// fastest checksum algorithm
+		final MessageCodec codec = Codecs.getAdler32Checksum(messageLength);
+
+		// message queue shared by snio and URingPaxos:
+		// heap byte buffers
+		final Factory<ByteBuffer> factory = new ByteBufferFactory(codec.getBodyLength());
+		// uses disruptor library
+		final MessageBufferConsumer<ByteBuffer> input = RingBufferProvider.createConsumer(256, factory);
+
+		server = MessageServerChannels.newTCPServerChannel()
+				.setPool(pool)
+				.setMessageCodec(codec)
+				.useRingBuffer() // uses disruptor library
+				.useSingleInputBuffer(input)
+				.open();
+
+		// consumer of incoming messages
+		final MessageConsumer<ByteBuffer> consumer = new MessageConsumer<ByteBuffer>() {
+			@Override
+			public void consume(final ByteBuffer buffer, final Object attachment) {
+				try {
+					final Message msg = Message.fromBuffer(buffer);
+					receive(msg);
+				} catch (final Exception e) {
+					// I've looked inside Message.fromBuffer()
+					// and I cannot see how an Exception could come from there...
+					e.printStackTrace();
+				}
 			}
-			logger.info("NetworkManager tcp_nodelay: " + tcp_nodelay);
+		};
+
+		// single threaded consumer
+		final MessageHandler<ByteBuffer> handler = MessageHandlers.buildHandler()
+				.setName("NetworkManager-consumer")
+				.useSingleConsumer(consumer)
+				.build();
+
+		// ties the consumer and channel together
+		server.onAccept(handler.getAcceptListener());
+
+		// binds the channel
+		server.bind(ring.getNodeAddress());
+		try {
+			server.getBindFuture().get(); // wait for bind to complete
+		} catch (final InterruptedException | ExecutionException e) {
+			throw new IOException(e);
 		}
-		if(ring.getConfiguration().containsKey(ConfigKey.tcp_crc)){
-			if(Integer.parseInt(ring.getConfiguration().get(ConfigKey.tcp_crc)) == 1){
-				crc_32 = true;
-			}
-			logger.info("NetworkManager tcp_crc: " + crc_32);
-		}
-		if(ring.getConfiguration().containsKey(ConfigKey.buffer_size)){
-			buf_size = Integer.parseInt(ring.getConfiguration().get(ConfigKey.buffer_size));
-			logger.info("NetworkManager buf_size: " + buf_size);
-		}
-		selector = Selector.open();
-		server = ServerSocketChannel.open();
-		server.setOption(StandardSocketOptions.SO_RCVBUF,buf_size);
-		server.configureBlocking(false);
-		server.socket().bind(ring.getNodeAddress());
-		server.register(selector, SelectionKey.OP_ACCEPT);
-		
-		Thread t = new Thread(new TCPListener(this,server,selector));
-		t.setName("TCPListener");
-		t.start();
-		logger.debug("NetworkManager listener started " + server.socket().getLocalSocketAddress() + " (buffer size: " + server.socket().getReceiveBufferSize() + ")");
+		logger.debug("NetworkManager listener started " + server.getLocalAddress());
 		
 		Thread t2 = new Thread(new NetworkStatsWriter(ring));
 		t2.setName("NetworkStatsWriter");
@@ -268,9 +305,11 @@ public class NetworkManager {
 	 */
 	public void closeServer(){
 		try {
-			selector.close();
 			server.close();
-		} catch (IOException e) {
+			server.getCloseFuture().get(); // wait for close to finish
+			pool.close();
+			pool.getCloseFuture().get(); // wait for close to finish
+		} catch (IOException | InterruptedException | ExecutionException e) {
 			logger.error("NetworkManager server close error",e);
 		}
 	}
@@ -280,25 +319,31 @@ public class NetworkManager {
 	 * 
 	 * @param addr
 	 */
-	public void connectClient(InetSocketAddress addr){
+	public void connectClient(InetSocketAddress addr) {
 		try {
 			Thread.sleep(1000); // give node time to start (zookeeper is fast!)
-		} catch (InterruptedException e) {
+		} catch (final InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new RuntimeException(e);
 		}
+
+		// see the maximum Adler32 checksum message length -- should be a config option
+		final int messageLength = 65521;
+		// fastest checksum algorithm
+		final MessageCodec codec = Codecs.getAdler32Checksum(messageLength);
+
 		try {
-			client = SocketChannel.open();
-			client.setOption(StandardSocketOptions.SO_SNDBUF,buf_size);
-			client.setOption(StandardSocketOptions.SO_RCVBUF,buf_size);			
-			client.socket().setSendBufferSize(buf_size);
-			client.configureBlocking(true); // Client runs in Blocking Mode !!!
+			client = MessageChannels.newTCPChannel()
+					.setPool(pool)
+					.setMessageCodec(codec)
+					.useRingBuffer() // uses the disruptor library
+					.open();
 			client.connect(addr);
-			client.setOption(StandardSocketOptions.TCP_NODELAY,tcp_nodelay);
-			Thread t = new Thread(new TCPSender(this,client,send_queue));
-			t.setName("TCPSender");
-			t.start();
+			client.getConnectFuture().get(); // wait for connection to complete
+			send_queue = client.getOutputBuffer();
 			logger.debug("NetworkManager create connection " + addr + " (" + client.getLocalAddress() + ")");
-		} catch (IOException e) {
-			logger.error("NetworkManager client connect error",e);
+		} catch (final IOException | InterruptedException | ExecutionException e) {
+			throw new RuntimeException(e);
 		}
 	}
 
@@ -309,9 +354,10 @@ public class NetworkManager {
 		try {
 			if(client != null){
 				client.close();
+				client.getCloseFuture().get(); // wait for close to finish
 				logger.debug("NetworkManager close connection");
 			}
-		} catch (IOException e) {
+		} catch (IOException | InterruptedException | ExecutionException e) {
 			logger.error("NetworkManager client close error",e);
 		}
 	}	
@@ -319,10 +365,18 @@ public class NetworkManager {
 	/**
 	 * @param m the message to send
 	 */
-	public void send(Message m){
+	public void send(Message m) {
 		try {
-			send_queue.transfer(m); // (blocking call)
-		} catch (InterruptedException e) {
+			final long sequence = send_queue.acquire(); // (blocking call)
+			try {
+				final ByteBuffer buffer = send_queue.get(sequence);
+				Message.toBuffer(buffer, m);
+				buffer.flip();
+			} finally {
+				send_queue.release(sequence);
+			}
+		} catch (final InterruptedException e) {
+			logger.error("NetworkManager client send error",e);
 		}
 	}
 	
