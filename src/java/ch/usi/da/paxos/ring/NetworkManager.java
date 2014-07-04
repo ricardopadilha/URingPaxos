@@ -126,17 +126,17 @@ public class NetworkManager {
 		// see the maximum Adler32 checksum message length -- should be a config option
 		final int messageLength = 65521;
 		// fastest checksum algorithm
-		final MessageCodec codec = Codecs.getAdler32Checksum(messageLength);
+		final Factory<MessageCodec> codecs = Codecs.getAdler32Factory(messageLength);
 
 		// message queue shared by snio and URingPaxos:
 		// heap byte buffers
-		final Factory<ByteBuffer> factory = new ByteBufferFactory(codec.getBodyLength());
+		final Factory<ByteBuffer> factory = new ByteBufferFactory(messageLength);
 		// uses disruptor library
 		final MessageBufferConsumer<ByteBuffer> input = RingBufferProvider.createConsumer(256, factory);
 
 		server = MessageServerChannels.newTCPServerChannel()
 				.setPool(pool)
-				.setMessageCodec(codec)
+				.setMessageCodec(codecs)
 				.useRingBuffer() // uses disruptor library
 				.useSingleInputBuffer(input)
 				.open();
