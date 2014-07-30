@@ -19,6 +19,8 @@ package ch.usi.da.paxos.storage;
  */
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import net.spy.memcached.AddrUtil;
 import net.spy.memcached.BinaryConnectionFactory;
@@ -27,7 +29,6 @@ import net.spy.memcached.MemcachedClient;
 import org.apache.log4j.Logger;
 
 import ch.usi.da.paxos.api.StableStorage;
-import ch.usi.da.paxos.message.Value;
 
 
 /**
@@ -49,6 +50,12 @@ public class MemcachedStorage implements StableStorage {
 	
 	private final int max = 15000;
 	
+	private final Map<Long, Integer> promised = new LinkedHashMap<Long,Integer>(10000,0.75F,false){
+		private static final long serialVersionUID = -2704400128020327063L;
+			protected boolean removeEldestEntry(Map.Entry<Long, Integer> eldest) {  
+				return size() > max; // hold only 15'000 values in memory !                                 
+	}};
+
 	public MemcachedStorage(){
 		try {
 			System.getProperties().put("net.spy.log.LoggerImpl", "net.spy.memcached.compat.log.Log4JLogger");
@@ -60,7 +67,22 @@ public class MemcachedStorage implements StableStorage {
 	}
 	
 	@Override
-	public void put(Long instance, Decision decision) {
+	public void putBallot(Long instance, int ballot) {
+		promised.put(instance, ballot);
+	}
+
+	@Override
+	public int getBallot(Long instance) {
+		return promised.get(instance);
+	}
+	
+	@Override
+	public synchronized boolean containsBallot(Long instance) {
+		return promised.containsKey(instance);
+	}
+
+	@Override
+	public void putDecision(Long instance, Decision decision) {
 		cache.set(prefix + "-" + instance%max,0,decision); // non-blocking
 		/*OperationFuture<Boolean> r = cache.set(prefix + "-" + instance%max,0,decision);
 		try {
@@ -72,13 +94,13 @@ public class MemcachedStorage implements StableStorage {
 	}
 
 	@Override
-	public Decision get(Long instance) {
+	public Decision getDecision(Long instance) {
 		return (Decision) cache.get(prefix + "-" + instance);
 	}
 
 	@Override
-	public boolean contains(Long instance) {
-		return get(instance) != null ? true : false;
+	public boolean containsDecision(Long instance) {
+		return getDecision(instance) != null ? true : false;
 	}
 
 	@Override
@@ -96,19 +118,5 @@ public class MemcachedStorage implements StableStorage {
 	public void close(){
 		cache.shutdown();
 	}
-	
-	/**
-	 * Debug method
-	 */
-	public static void main(String[] args){
-		MemcachedStorage db = new MemcachedStorage();
-		Decision d = new Decision(0,1L,42,new Value("id","value".getBytes()));
-		Decision d2 = new Decision(0,1L,43,new Value("id","value".getBytes()));
-		System.out.println(db.contains(1L));
-		db.put(1L,d);
-		db.put(15001L,d2);		
-		System.out.println(db.contains(1L));
-		System.out.println(db.get(1L));
-		db.close();
-	}
+
 }
