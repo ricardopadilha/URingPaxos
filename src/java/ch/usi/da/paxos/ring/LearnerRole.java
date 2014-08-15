@@ -30,6 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 
+import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics;
 import org.apache.log4j.Logger;
 
 import ch.usi.da.paxos.api.Learner;
@@ -46,7 +47,7 @@ import ch.usi.da.paxos.storage.Decision;
  * Creation date: Aug 12, 2012<br>
  * $Id$
  * 
- * @author Samuel Benz <benz@geoid.ch>
+ * @author Samuel Benz benz@geoid.ch
  */
 public class LearnerRole extends Role implements Learner {
 
@@ -91,7 +92,11 @@ public class LearnerRole extends Role implements Learner {
 	public long deliver_bytes = 0;
 	
 	public volatile int latency_to_coordinator = 0;
-	
+
+	private final int median_window = 1000;
+
+	private DescriptiveStatistics latencies = new DescriptiveStatistics(median_window);
+
 	/**
 	 * @param ring
 	 */
@@ -201,7 +206,10 @@ public class LearnerRole extends Role implements Learner {
 						deliver_bytes = deliver_bytes + de.getValue().getValue().length;
 						if(de.getValue().isSkip()){
 							try {
-								latency_to_coordinator = (int)(System.currentTimeMillis() - Long.parseLong(d.getValue().getID().split(":")[1]));
+								latencies.addValue(System.currentTimeMillis() - Long.parseLong(d.getValue().getID().split(":")[1]));
+								if(latencies.getN() >= median_window){
+									latency_to_coordinator = (int) latencies.getPercentile(50);
+								}
 							}catch(Exception e){
 							}
 						}
@@ -264,6 +272,10 @@ public class LearnerRole extends Role implements Learner {
 		return values;
 	}
 	
+	public Map<String, Value> getLearned(){
+		return Collections.unmodifiableMap(learned);
+	}
+	
 	@Override
 	public void setSafeInstance(Integer ring,Long instance){
 		if(instance <= delivered_instance){
@@ -287,5 +299,4 @@ public class LearnerRole extends Role implements Learner {
 		}
 		return pos;
 	}
-
 }

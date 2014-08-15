@@ -1,6 +1,9 @@
 package ch.usi.da.paxos.api;
+
+import ch.usi.da.paxos.ring.ProposerRole;
+
 /* 
- * Copyright (c) 2013 Università della Svizzera italiana (USI)
+ * Copyright (c) 2014 Università della Svizzera italiana (USI)
  * 
  * This file is part of URingPaxos.
  *
@@ -18,34 +21,17 @@ package ch.usi.da.paxos.api;
  * along with URingPaxos.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import ch.usi.da.paxos.storage.Decision;
-
 /**
- * Name: StableStorage<br>
+ * Name: BatchPolicy<br>
  * Description: <br>
  * 
- * Creation date: Feb 7, 2013<br>
+ * Creation date: Aug 06, 2014<br>
  * $Id$
  * 
  * @author Samuel Benz benz@geoid.ch
  */
-public interface StableStorage {
+public interface BatchPolicy extends Runnable {
+	
+	public void setProposer(ProposerRole proposer);
 
-	public void putBallot(Long instance, int ballot);
-	
-	public int getBallot(Long instance);
-	
-	public boolean containsBallot(Long instance);
-	
-	public void putDecision(Long instance, Decision decision);
-	
-	public Decision getDecision(Long instance);
-	
-	public boolean containsDecision(Long instance);
-	
-	public boolean trim(Long instance);
-	
-	public Long getLastTrimInstance();
-	
-	public void close();
 }

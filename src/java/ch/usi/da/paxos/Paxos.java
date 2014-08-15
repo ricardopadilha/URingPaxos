@@ -19,7 +19,6 @@ package ch.usi.da.paxos;
  */
 
 import java.net.DatagramPacket;
-import java.net.SocketException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -36,7 +35,7 @@ import ch.usi.da.paxos.storage.Decision;
  * Creation date: Apr 1, 2012<br>
  * $Id$
  * 
- * @author Samuel Benz <benz@geoid.ch>
+ * @author Samuel Benz benz@geoid.ch
  */
 public class Paxos {
 
@@ -135,7 +134,7 @@ public class Paxos {
 			byte[] b = Message.toWire(m);
 			DatagramPacket p = new DatagramPacket(b,b.length,Configuration.getGroup(m.getReceiver()));
 			l.add(p);
-		} catch (SocketException e) {
+		} catch (Exception e) {
 		}
 	}
 

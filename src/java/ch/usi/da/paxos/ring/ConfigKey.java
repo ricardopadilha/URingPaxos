@@ -25,7 +25,7 @@ package ch.usi.da.paxos.ring;
  * Creation date: Sep 16, 2012<br>
  * $Id$
  * 
- * @author Samuel Benz <benz@geoid.ch>
+ * @author Samuel Benz benz@geoid.ch
  */
 abstract class ConfigKey {
 
@@ -57,7 +57,7 @@ abstract class ConfigKey {
 	/**
 	 * see RingManager for default
 	 */	
-	public static final String batch_size = "value_batch_size";
+	public static final String batch_policy = "proposer_batch_policy";
 
 	/**
 	 * see RingManager for default

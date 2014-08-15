@@ -51,7 +51,7 @@ import ch.usi.da.paxos.api.PaxosRole;
  * Creation date: Aug 12, 2012<br>
  * $Id$
  * 
- * @author Samuel Benz <benz@geoid.ch>
+ * @author Samuel Benz benz@geoid.ch
  */
 public class RingManager implements Watcher {
 	
@@ -183,7 +183,7 @@ public class RingManager implements Watcher {
 			zoo.create(path + "/" + config_path + "/" + ConfigKey.concurrent_values,"20".getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
 			zoo.create(path + "/" + config_path + "/" + ConfigKey.value_size,"32768".getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
 			zoo.create(path + "/" + config_path + "/" + ConfigKey.value_count,"900000".getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
-			zoo.create(path + "/" + config_path + "/" + ConfigKey.batch_size,"0".getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);			
+			zoo.create(path + "/" + config_path + "/" + ConfigKey.batch_policy,"none".getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
 			zoo.create(path + "/" + config_path + "/" + ConfigKey.value_resend_time,"3000".getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
 			zoo.create(path + "/" + config_path + "/" + ConfigKey.quorum_size,"2".getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
 			zoo.create(path + "/" + config_path + "/" + ConfigKey.stable_storage,"ch.usi.da.paxos.storage.BufferArray".getBytes(),Ids.OPEN_ACL_UNSAFE,CreateMode.PERSISTENT);
