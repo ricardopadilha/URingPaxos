@@ -18,6 +18,7 @@ package ch.usi.da.paxos.ring;
  * along with URingPaxos.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
@@ -28,6 +29,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.log4j.Logger;
 
+import ch.usi.da.paxos.api.ConfigKey;
 import ch.usi.da.paxos.api.PaxosRole;
 import ch.usi.da.paxos.message.Message;
 import ch.usi.da.paxos.message.MessageType;
@@ -115,8 +117,8 @@ public class CoordinatorRole extends Role {
 	@Override
 	public void run() {
 		ring.getNetwork().registerCallback(this);
-		try { // wait until ring is big enough
-			while(ring.getRing().size() < ring.getQuorum()){
+		try { // wait until quorum is possible (ring is big enough)
+			while(ring.getAcceptors().size() < ring.getQuorum()){
 				Thread.sleep(1000);
 			}
 			Thread.sleep(3000);
@@ -212,7 +214,19 @@ public class CoordinatorRole extends Role {
 		}else if(m.getType() == MessageType.Latency){
 			latency_compensation = Integer.parseInt(new String(m.getValue().getValue()));
 		}else if(m.getType() == MessageType.Value){
-			value_count.incrementAndGet();
+			if(m.getValue().isBatch()){ // not so nice; but the instance skipper needs the exact amount of values
+				ByteBuffer buffer = ByteBuffer.wrap(m.getValue().getValue());
+				while(buffer.remaining() > 0){
+					try {
+						Message.fromBuffer(buffer);
+						value_count.incrementAndGet();
+					} catch (Exception e) {
+						logger.error("Coordinator could not de-serialize batch message!" + e);
+					}
+				}
+			}else{
+				value_count.incrementAndGet();
+			}
 			Promise p = null;
 			try {
 				p = promises.poll(1,TimeUnit.SECONDS); // wait for a promise

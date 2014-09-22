@@ -42,6 +42,7 @@ import net.dsys.snio.impl.pool.SelectorPools;
 
 import org.apache.log4j.Logger;
 
+import ch.usi.da.paxos.api.ConfigKey;
 import ch.usi.da.paxos.api.PaxosRole;
 import ch.usi.da.paxos.message.Message;
 import ch.usi.da.paxos.message.MessageType;
@@ -184,7 +185,7 @@ public class NetworkManager {
 	 * 
 	 * @param m the received message
 	 */
-	public void receive(Message m){
+	public synchronized void receive(Message m){
 		/*if(logger.isDebugEnabled()){
 			logger.debug("receive network message (ring:" + ring.getRingID() + ") : " + m);
 		}*/
@@ -213,8 +214,8 @@ public class NetworkManager {
 				send(m);
 			}	
 		}else if(m.getType() == MessageType.Decision){
-			// network -> predecessor(last_accept)
-			if(ring.getNodeID() != ring.getRingPredecessor(ring.getLastAcceptor())){
+			// network -> predecessor(deciding acceptor)
+			if(ring.getRingSuccessor(ring.getNodeID()) != m.getSender()){
 				send(m);
 			}
 		}else if(m.getType() == MessageType.Phase1 || m.getType() == MessageType.Phase1Range){

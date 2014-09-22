@@ -15,7 +15,6 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 import ch.usi.da.paxos.api.PaxosRole;
-import ch.usi.da.paxos.examples.Util;
 import ch.usi.da.paxos.lab.DummyWatcher;
 import ch.usi.da.paxos.message.Message;
 import ch.usi.da.paxos.message.MessageType;
@@ -35,8 +34,9 @@ public class TestAcceptor {
 	
 	@BeforeClass
 	public static void prepare() throws Exception {
+		Thread.sleep(3000);
 		ZooKeeper zoo = new ZooKeeper("localhost:2181",1000,new DummyWatcher());
-		String path = "/ringpaxos/ring1/config/stable_storage";
+		String path = "/ringpaxos/topology1/config/stable_storage";
 		String data = "ch.usi.da.paxos.storage.InMemory";
 		zoo.setData(path,data.getBytes(),-1);
 		path = "/ringpaxos/config/multi_ring_lambda";
@@ -343,7 +343,7 @@ public class TestAcceptor {
 		assertEquals(101,(int)a3.getStableStorage().getDecision(1L).getBallot());
 		assertEquals(101,(int)a1.getStableStorage().getBallot(1L));
 		assertEquals(101,(int)a2.getStableStorage().getBallot(1L));
-		assertEquals(101,(int)a3.getStableStorage().getBallot(1L));
+		//not required since sn'd acceptor decides and 3rd never receives Phase2; assertEquals(101,(int)a3.getStableStorage().getBallot(1L));
 		assertEquals(s,new String(a1.getStableStorage().getDecision(1L).getValue().getValue()));
 		assertEquals(s,new String(a2.getStableStorage().getDecision(1L).getValue().getValue()));
 		assertEquals(s,new String(a3.getStableStorage().getDecision(1L).getValue().getValue()));
